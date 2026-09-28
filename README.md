@@ -44,6 +44,14 @@ implementation — reports every multi-page document as a gap, which trains
 reviewers to ignore the warning. On the sample volume that difference is 30
 false gaps versus the one real one.
 
+## The report
+
+The HTML report is a single self-contained file. The exception log filters
+by severity and rule, searches across record and detail, and opens a detail
+panel for any row with the rule's meaning and the resolution path. A
+Download CSV button exports whatever is currently filtered. Nothing leaves
+the browser; there is no server and no network call.
+
 ## Search term reporting
 
 Point it at a term list and it scores each term against the production's
@@ -126,8 +134,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-39 tests covering the parsers, every rule, the search term scoring, and the
-CLI end to end.
+43 tests covering the parsers, every rule, the search term scoring, the report
+and the CLI end to end.
 
 ## Scope
 

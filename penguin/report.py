@@ -99,11 +99,29 @@ def _finding_rows(findings: list[Finding], limit: int) -> str:
     order = {BLOCKER: 0}
     shown = sorted(findings, key=lambda f: (order.get(f.severity, 1), f.rule, f.record))[:limit]
     rows = "".join(
-        f"<tr><td><span class='sev {_esc(f.severity)}'>{_esc(f.severity)}</span></td>"
+        f"<tr data-sev='{_esc(f.severity)}' data-rule='{_esc(f.rule)}' tabindex='0'>"
+        f"<td><span class='sev {_esc(f.severity)}'>{_esc(f.severity)}</span></td>"
         f"<td class='mono'>{_esc(f.rule)}</td>"
         f"<td class='mono'>{_esc(f.record)}</td>"
         f"<td>{_esc(f.detail)}</td></tr>"
         for f in shown
+    )
+    rule_options = "".join(
+        f"<option value='{_esc(rule)}'>{_esc(rule)}</option>"
+        for rule in sorted({f.rule for f in findings})
+    )
+    toolbar = (
+        "<div class='toolbar'>"
+        "<div class='seg' role='group' aria-label='Severity'>"
+        "<button type='button' data-filter='all' class='on'>All</button>"
+        "<button type='button' data-filter='blocker'>Blockers</button>"
+        "<button type='button' data-filter='warning'>Warnings</button>"
+        "</div>"
+        f"<select id='rule-filter' aria-label='Rule'><option value=''>Every rule</option>{rule_options}</select>"
+        "<input id='log-search' type='search' placeholder='Search record or detail' aria-label='Search exceptions'>"
+        "<button type='button' id='dl-csv' class='ghost'>Download CSV</button>"
+        "<span id='log-count' class='count'></span>"
+        "</div>"
     )
     more = ""
     if len(findings) > limit:
@@ -112,8 +130,10 @@ def _finding_rows(findings: list[Finding], limit: int) -> str:
             f"The CSV export carries the full log.</p>"
         )
     return (
-        "<table><thead><tr><th>Severity</th><th>Rule</th><th>Record</th>"
-        "<th>Detail</th></tr></thead><tbody>" + rows + "</tbody></table>" + more
+        toolbar
+        + "<table id='log'><thead><tr><th>Severity</th><th>Rule</th><th>Record</th>"
+        "<th>Detail</th></tr></thead><tbody>" + rows + "</tbody></table>"
+        + "<div id='detail' class='detail' hidden></div>" + more
     )
 
 
@@ -241,6 +261,26 @@ th.num{font-family:var(--body); font-weight:600}
 .bar{height:.4rem; background:var(--hair); border-radius:1px; overflow:hidden; min-width:6rem}
 .bar i{display:block; height:100%; background:var(--ice)}
 .empty{color:var(--muted); font-size:.9rem; margin:.7rem 0 0}
+.toolbar{display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; margin:0 0 .9rem}
+.seg{display:inline-flex; border:1.5px solid var(--ink)}
+.seg button{background:transparent; color:var(--ink); border:0; padding:.4rem .8rem; font:inherit; font-size:.85rem; font-weight:600; cursor:pointer}
+.seg button+button{border-left:1.5px solid var(--ink)}
+.seg button.on{background:var(--ink); color:var(--paper)}
+.toolbar select,.toolbar input{font:inherit; font-size:.85rem; padding:.4rem .6rem; border:1.5px solid var(--hair); background:var(--paper); color:var(--ink)}
+.toolbar input{flex:1 1 12rem; min-width:10rem}
+.toolbar select:focus,.toolbar input:focus{outline:none; border-color:var(--ice)}
+button.ghost{background:transparent; color:var(--ink); border:1.5px solid var(--ink); padding:.4rem .8rem; font:inherit; font-size:.85rem; font-weight:600; cursor:pointer}
+button.ghost:hover{background:var(--ice); border-color:var(--ice); color:#0b0c0d}
+.count{color:var(--muted); font-size:.85rem; margin-left:auto}
+#log tbody tr{cursor:pointer}
+#log tbody tr:hover{background:color-mix(in srgb, var(--ice) 10%, transparent)}
+#log tbody tr.sel{background:color-mix(in srgb, var(--ice) 18%, transparent)}
+#log tbody tr[hidden]{display:none}
+.detail{border:1.5px solid var(--ink); padding:.9rem 1.1rem; margin-top:.9rem; font-size:.9rem}
+.detail h3{font-family:var(--display); font-size:1rem; margin:0 0 .4rem; letter-spacing:-0.01em}
+.detail dl{display:grid; grid-template-columns:7rem 1fr; gap:.25rem .8rem; margin:0}
+.detail dt{color:var(--muted)}
+.detail dd{margin:0}
 footer{border-top:3px solid var(--ink); padding-top:1rem; color:var(--muted); font-size:.85rem; margin-top:1rem}
 code{font-family:var(--mono); font-size:.8em}
 @media (max-width:40rem){
@@ -251,6 +291,61 @@ code{font-family:var(--mono); font-size:.8em}
 }
 @media print{.band{-webkit-print-color-adjust:exact; print-color-adjust:exact}}
 """
+
+
+SCRIPT = r"""<script>
+(function(){
+  var log=document.getElementById('log'); if(!log) return;
+  var rows=Array.prototype.slice.call(log.tBodies[0].rows);
+  var sev='all', rule='', q='';
+  var count=document.getElementById('log-count');
+  var detail=document.getElementById('detail');
+  var meaning=__RULE_MEANINGS__;
+  function apply(){
+    var n=0;
+    rows.forEach(function(r){
+      var ok=(sev==='all'||r.dataset.sev===sev)&&(!rule||r.dataset.rule===rule)&&
+             (!q||r.textContent.toLowerCase().indexOf(q)>-1);
+      r.hidden=!ok; if(ok) n++;
+    });
+    count.textContent=n+' of '+rows.length+' shown';
+  }
+  document.querySelectorAll('.seg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('.seg button').forEach(function(x){x.classList.remove('on')});
+      b.classList.add('on'); sev=b.dataset.filter; apply();
+    });
+  });
+  document.getElementById('rule-filter').addEventListener('change',function(e){rule=e.target.value; apply();});
+  document.getElementById('log-search').addEventListener('input',function(e){q=e.target.value.trim().toLowerCase(); apply();});
+  function show(r){
+    rows.forEach(function(x){x.classList.remove('sel')}); r.classList.add('sel');
+    var c=r.cells;
+    detail.innerHTML='<h3>'+c[2].textContent+'</h3><dl>'+
+      '<dt>Severity</dt><dd>'+c[0].textContent+'</dd>'+
+      '<dt>Rule</dt><dd>'+c[1].textContent+'</dd>'+
+      '<dt>Meaning</dt><dd>'+(meaning[c[1].textContent]||'')+'</dd>'+
+      '<dt>Finding</dt><dd>'+c[3].textContent+'</dd>'+
+      '<dt>Resolution</dt><dd>Fix the volume and re-run, or record a written waiver naming this record.</dd></dl>';
+    detail.hidden=false; detail.scrollIntoView({block:'nearest'});
+  }
+  rows.forEach(function(r){
+    r.addEventListener('click',function(){show(r)});
+    r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();show(r)}});
+  });
+  document.getElementById('dl-csv').addEventListener('click',function(){
+    var esc=function(v){return '"'+String(v).replace(/"/g,'""')+'"'};
+    var out=['severity,rule,record,detail'];
+    rows.forEach(function(r){ if(!r.hidden){ var c=r.cells;
+      out.push([c[0].textContent,c[1].textContent,c[2].textContent,c[3].textContent].map(esc).join(',')); }});
+    var blob=new Blob([out.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='exceptions.csv'; document.body.appendChild(a); a.click();
+    setTimeout(function(){URL.revokeObjectURL(a.href); a.remove();},0);
+  });
+  apply();
+})();
+</script>"""
 
 
 def write_html(
@@ -281,6 +376,8 @@ def write_html(
         for label, value in facts
     )
 
+    import json as _json
+    script_block = SCRIPT.replace("__RULE_MEANINGS__", _json.dumps(RULE_DESCRIPTIONS))
     document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -334,6 +431,7 @@ def write_html(
   Findings are advisory; a defect is closed by fixing the volume or recording a written waiver.
 </footer>
 </main>
+{script_block}
 </body>
 </html>"""
 
