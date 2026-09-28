@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "penguin"
+version = "0.1.0"
+description = "Pre-delivery quality control for eDiscovery productions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Philip AJ Sogah" }]
+keywords = ["ediscovery", "edrm", "concordance", "opticon", "bates", "quality-control"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Text Processing :: General",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov>=4"]
+
+[project.scripts]
+penguin = "penguin.cli:main"
+
+[project.urls]
+Source = "https://github.com/axlAJ/penguin"
+
+[tool.setuptools]
+packages = ["penguin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

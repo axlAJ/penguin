@@ -1,0 +1,50 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q --cov=penguin --cov-report=term-missing
+
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Build the sample production
+        run: python -m sample.make_sample sample/VOL001
+      - name: Run QC and confirm the seeded defects are caught
+        run: |
+          penguin run \
+            --dat sample/VOL001/VOL001.dat \
+            --opt sample/VOL001/VOL001.opt \
+            --volume sample/VOL001 \
+            --terms sample/VOL001/terms.txt \
+            --html qc-report.html \
+            --csv exceptions.csv \
+            --fail-on never
+          grep -q "native-missing" exceptions.csv
+          grep -q "family-orphan" exceptions.csv
+          grep -q "page-count" exceptions.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qc-report
+          path: |
+            qc-report.html
+            exceptions.csv
